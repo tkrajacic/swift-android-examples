@@ -95,12 +95,53 @@ val abis = mapOf(
     "armeabi-v7a"   to mapOf("triple" to "armv7-unknown-linux-android$minSdk", "androidSdkLibDirectory" to "swift-armv7", "ndkDirectory" to "arm-linux-android"),
     "x86_64"        to mapOf("triple" to "x86_64-unknown-linux-android$minSdk", "androidSdkLibDirectory" to "swift-x86_64", "ndkDirectory" to "x86_64-linux-android")
 )
+
+fun parseAbiList(value: String): List<String> =
+    value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+
+val explicitSwiftAbis = (project.findProperty("swift.abis") as? String)
+    ?: System.getenv("SWIFT_ABIS")
+val injectedBuildAbi = project.findProperty("android.injected.build.abi") as? String
+val requestedTasks = gradle.startParameter.taskNames
+val isReleaseLikeBuild = requestedTasks.any {
+    it.contains("release", ignoreCase = true) ||
+        it.contains("bundle", ignoreCase = true) ||
+        it.contains("publish", ignoreCase = true)
+}
+
+val hostDefaultAbi = when (System.getProperty("os.arch").lowercase()) {
+    "aarch64", "arm64" -> "arm64-v8a"
+    "x86_64", "amd64" -> "x86_64"
+    else -> null
+}
+
+val selectedSwiftAbisSource = when {
+    explicitSwiftAbis != null -> "swift.abis/SWIFT_ABIS"
+    isReleaseLikeBuild -> "release-default-all"
+    !injectedBuildAbi.isNullOrBlank() -> "android.injected.build.abi"
+    hostDefaultAbi != null -> "host-os.arch"
+    else -> "default-all"
+}
+
+val selectedSwiftAbis = when (selectedSwiftAbisSource) {
+    "swift.abis/SWIFT_ABIS" -> parseAbiList(explicitSwiftAbis!!)
+    "release-default-all" -> abis.keys.toList()
+    "android.injected.build.abi" -> parseAbiList(injectedBuildAbi!!)
+    "host-os.arch" -> listOf(hostDefaultAbi!!)
+    else -> abis.keys.toList()
+}
+
+val unknownSwiftAbis = selectedSwiftAbis.filter { it !in abis.keys }
+if (unknownSwiftAbis.isNotEmpty()) {
+    throw GradleException("Unknown ABI(s) for Swift build: ${unknownSwiftAbis.joinToString(", ")}. Supported ABIs: ${abis.keys.joinToString(", ")}")
+}
+
 val generatedJniLibsDir = layout.buildDirectory.dir("generated/jniLibs")
 val swiftSdkPath = "${getSwiftSDKPath().absolutePath}/$sdkName"
-val sharedWeatherLibDir = layout.projectDirectory.dir("../../Shared/weather-lib")
-val swiftPackageFile = sharedWeatherLibDir.file("Package.swift")
-val swiftSourcesDir = sharedWeatherLibDir.dir("Sources/WeatherLibrary")
-val generatedJavaDir = sharedWeatherLibDir.dir(".build/plugins/outputs/${layout.projectDirectory.asFile.name.lowercase()}/WeatherLibrary/destination/JExtractSwiftPlugin/src/generated/java")
+val sharedSwiftLibDir = layout.projectDirectory.dir("../../Shared/weather-lib")
+val swiftPackageFile = sharedSwiftLibDir.file("Package.swift")
+val swiftSourcesDir = sharedSwiftLibDir.dir("Sources/WeatherLibrary")
+val generatedJavaDir = sharedSwiftLibDir.dir(".build/plugins/outputs/${layout.projectDirectory.asFile.name.lowercase()}/WeatherLibrary/destination/JExtractSwiftPlugin/src/generated/java")
 
 abstract class BuildSwiftTask : DefaultTask() {
     @get:OutputDirectory
@@ -111,8 +152,16 @@ val buildSwiftAll = tasks.register<BuildSwiftTask>("buildSwiftAll") {
     group = "build"
     description = "Builds the Swift code for all Android ABIs."
     outputDir.set(generatedJavaDir)
+
+    // Invalidate only when the effective ABI set changes.
+    inputs.property("selectedSwiftAbis", selectedSwiftAbis)
+
+    doFirst {
+        println("Swift ABI selection ($selectedSwiftAbisSource): ${selectedSwiftAbis.joinToString(", ")}")
+    }
 }
 // Create a build task for each ABI
+val buildSwiftTasks = mutableMapOf<String, TaskProvider<Exec>>()
 abis.forEach { (abi, info) ->
     val task = tasks.register<Exec>("buildSwift${abi.replaceFirstChar { it.uppercase() }}") {
         group = "build"
@@ -140,13 +189,19 @@ abis.forEach { (abi, info) ->
         args("run", "swift", "build", "+$swiftVersion", "--swift-sdk", info["triple"]!!, "--disable-sandbox", "--package-path", "../../Shared/weather-lib")
     }
 
-    buildSwiftAll.configure { dependsOn(task) }
+    buildSwiftTasks[abi] = task
+}
+
+buildSwiftAll.configure {
+    dependsOn(selectedSwiftAbis.map { buildSwiftTasks.getValue(it) })
 }
 
 val copyJniLibs = tasks.register<Copy>("copyJniLibs") {
     dependsOn(buildSwiftAll)
+    inputs.property("selectedSwiftAbis", selectedSwiftAbis)
 
-    abis.forEach { (abi, info) ->
+    selectedSwiftAbis.forEach { abi ->
+        val info = abis.getValue(abi)
         from(layout.projectDirectory.dir("../../Shared/weather-lib/.build/${info["triple"]}/debug")) {
             include("*.so")
             into(abi)

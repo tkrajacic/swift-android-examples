@@ -97,6 +97,10 @@ val abis = mapOf(
 )
 val generatedJniLibsDir = layout.buildDirectory.dir("generated/jniLibs")
 val swiftSdkPath = "${getSwiftSDKPath().absolutePath}/$sdkName"
+val sharedWeatherLibDir = layout.projectDirectory.dir("../../Shared/weather-lib")
+val swiftPackageFile = sharedWeatherLibDir.file("Package.swift")
+val swiftSourcesDir = sharedWeatherLibDir.dir("Sources/WeatherLibrary")
+val generatedJavaDir = sharedWeatherLibDir.dir(".build/plugins/outputs/${layout.projectDirectory.asFile.name.lowercase()}/WeatherLibrary/destination/JExtractSwiftPlugin/src/generated/java")
 
 abstract class BuildSwiftTask : DefaultTask() {
     @get:OutputDirectory
@@ -106,14 +110,7 @@ abstract class BuildSwiftTask : DefaultTask() {
 val buildSwiftAll = tasks.register<BuildSwiftTask>("buildSwiftAll") {
     group = "build"
     description = "Builds the Swift code for all Android ABIs."
-
-    inputs.file(file("../../Shared/weather-lib/Package.swift"))
-    inputs.dir(file("../../Shared/weather-lib/Sources/WeatherLibrary"))
-    
-    val genDir = layout.buildDirectory.dir("../../../Shared/weather-lib/.build/plugins/outputs/${layout.projectDirectory.asFile.name.lowercase()}/WeatherLibrary/destination/JExtractSwiftPlugin/src/generated/java")
-    outputs.dir(genDir)
-
-    outputDir.set(genDir)
+    outputDir.set(generatedJavaDir)
 }
 // Create a build task for each ABI
 abis.forEach { (abi, info) ->
@@ -121,8 +118,16 @@ abis.forEach { (abi, info) ->
         group = "build"
         description = "Builds the Swift code for the $abi ABI."
 
+        // Ensure Swift source/config changes invalidate this producer task.
+        inputs.file(swiftPackageFile)
+        inputs.dir(swiftSourcesDir)
+        inputs.property("swiftTriple", info["triple"]!!)
+        inputs.property("swiftVersion", swiftVersion)
+        inputs.property("swiftSdkPath", swiftSdkPath)
+
         // We can't conditionally import the swift-java build plugin in Package.swift
         environment("SWIFT_JAVA_BUILD", "1")
+        inputs.property("swiftJavaBuild", "1")
 
         doFirst {
             println("Building Swift for $abi (${info["triple"]})...")

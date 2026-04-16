@@ -7,6 +7,15 @@ import Foundation.NSProcessInfo
 
 let isSwiftJavaBuild = ProcessInfo.processInfo.environment["SWIFT_JAVA_BUILD"] != nil
 
+let commonSwiftSettings: [SwiftSetting] = [
+    .enableUpcomingFeature("ExistentialAny"),
+    // .enableUpcomingFeature("InternalImportsByDefault"),
+    .enableUpcomingFeature("MemberImportVisibility"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    .enableUpcomingFeature("ImmutableWeakCaptures"),
+]
+
 let package = Package(
   name: "WeatherLibrary",
   platforms: [.macOS(.v15), .iOS(.v13)],
@@ -32,9 +41,7 @@ let package = Package(
             .product(name: "OpenAPIURLSession", package: "swift-openapi-urlsession", condition: .when(platforms: [.macOS, .iOS])),
             .product(name: "OpenAPIAsyncHTTPClient", package: "swift-openapi-async-http-client", condition: .when(platforms: [.android])),
         ],
-        swiftSettings: [
-          .swiftLanguageMode(.v5)
-        ],
+        swiftSettings: commonSwiftSettings + [.swiftLanguageMode(.v5)],
         plugins: [
             .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator"),
         ]

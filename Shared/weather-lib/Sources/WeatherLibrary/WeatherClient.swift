@@ -16,7 +16,12 @@ import OpenAPIAsyncHTTPClient
 import OpenAPIURLSession
 #endif
 import OpenAPIRuntime
+
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
 import Foundation
+#endif
 
 public final class WeatherClient {
     private let client: Client

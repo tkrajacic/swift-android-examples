@@ -83,8 +83,8 @@ val swiftRuntimeLibs = listOf(
     "BlocksRuntime", "swiftSwiftOnoneSupport", "swiftDispatch", "Foundation",
     "FoundationEssentials", "FoundationInternationalization", "_FoundationICU", "swiftSynchronization"
 )
-val sdkName = "swift-6.3-RELEASE_android.artifactbundle"
-val swiftVersion = "6.3"
+val sdkName = "swift-6.3.1-RELEASE_android.artifactbundle"
+val swiftVersion = "6.3.1"
 val minSdk = android.defaultConfig.minSdk!!
 
 /**

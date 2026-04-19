@@ -16,3 +16,19 @@ public struct WeatherData: Hashable {
     public let windSpeed: Double
     public let windDirection: Double
 }
+
+#if canImport(FoundationEssentials)
+public import FoundationEssentials
+#else
+public import Foundation
+#endif
+
+#if os(Android)
+public typealias Amount = Double
+#else
+public typealias Amount = Decimal
+#endif
+
+public struct TypeAliasProblem: Hashable {
+    public var myAmount: Amount
+}
